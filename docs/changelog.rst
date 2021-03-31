@@ -5,6 +5,49 @@ ChangeLog
           for a 1.0 release in the coming months.
 
 
+Version 0.21.0 (11 Mar 2021)
+----------------------------
+
+* There have been significant semantic and API changes for TaskGroups.  Their behaviour is
+  now consistent, reliable and they have the same semantics as curio.  As such I consider
+  their API finalized and stable.  In addition to the notes below for 0.20.x:
+
+* closed() became the attribute joined.
+* cancel_remaining() does not cancel daemonic tasks.  As before it waits for the
+  cancelled tasks to complete.
+* On return from join() all tasks including deamonic ones have been cancelled, but nothing
+  is waited for.  If leaving a TaskGroup context because of an exception,
+  cancel_remaining() - which can block - is called before join().
+
+Version 0.20.2 (10 Mar 2021)
+----------------------------
+
+* result, exception, results and exceptions are now attributes.  They raise a RuntimeError
+  if called before a TaskGroup's join() operation has returned.
+
+
+Version 0.20.1 (06 Mar 2021)
+----------------------------
+
+* this release contains some significant API changes which users will need to carefully check
+  their code for.
+* the report_crash argument to spawn() is removed; instead a new one is named daemon.  A
+  daemon task's exception (if any) is ignored by a TaskGroup.
+* the join() method of TaskGroup (and so also when TaskGroup is used as a context manager)
+  does not raise the exception of failed tasks.  The full semantics are precisely
+  described in the TaskGroup() docstring.  Briefly: any task being cancelled or raising an
+  exception causes join() to finish and all remaining tasks, including daemon tasks, to be
+  cancelled.  join() does not propagate task exceptions.
+* the cancel_remaining() method of TaskGroup does not propagate any task exceptions
+* TaskGroup supports the additional attributes 'tasks' and 'daemons'.  Also, after join()
+  has completed, result() returns the result (or raises the exception) of the first
+  completed task.  exception() returns the exception (if any) of the first completed task.
+  results() returns the results of all tasks and exceptions() returns the exceptions
+  raised by all tasks.  daemon tasks are ignored.
+* The above changes bring the implementation in line with curio proper and the semantic
+  changes it made over a year ago, and ensure that join() behaves consistently when called
+  more than once.
+
 Version 0.18.4 (20 Nov 2019)
 ----------------------------
 

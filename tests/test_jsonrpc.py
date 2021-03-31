@@ -1,3 +1,5 @@
+import sys
+
 from itertools import chain, combinations, count
 import json
 import pytest
@@ -95,15 +97,15 @@ def test_parse_errors(protocol_no_auto):
         protocol.message_to_item(message)
     assert e.value.code == JSONRPC.PARSE_ERROR
     assert 'messages must be encoded in UTF-8' in e.value.message
-    assert b'"id": null' in e.value.error_message
+    assert b'"id":null' in e.value.error_message
 
     # Bad JSON
-    message = b'{"foo", }'
+    message = b'{"foo",}'
     with pytest.raises(ProtocolError) as e:
         protocol.message_to_item(message)
     assert e.value.code == JSONRPC.PARSE_ERROR
     assert 'invalid JSON' in e.value.message
-    assert b'"id": null' in e.value.error_message
+    assert b'"id":null' in e.value.error_message
 
     messages = [b'2', b'"foo"', b'2.78']
     for message in messages:
@@ -111,7 +113,7 @@ def test_parse_errors(protocol_no_auto):
             protocol.message_to_item(message)
         assert e.value.code == JSONRPC.INVALID_REQUEST
         assert 'must be a dictionary' in e.value.message
-        assert b'"id": null' in e.value.error_message
+        assert b'"id":null' in e.value.error_message
 
 
 # Requests
@@ -198,7 +200,7 @@ def test_JSONRPCv1_ill_formed():
         protocol.message_to_item(message)
     assert e.value.code == JSONRPC.INVALID_REQUEST
     assert 'no "id"' in e.value.message
-    assert b'"id": null' in e.value.error_message
+    assert b'"id":null' in e.value.error_message
 
 
 def test_bad_requests(protocol_no_auto):
@@ -209,7 +211,7 @@ def test_bad_requests(protocol_no_auto):
         payload_to_item(protocol, payload)
     assert e.value.code == JSONRPC.INVALID_ARGS
     assert 'invalid request arguments' in e.value.message
-    assert b'"id": 0' in e.value.error_message
+    assert b'"id":0' in e.value.error_message
 
 
 def test_good_requests(protocol_no_auto):
@@ -419,7 +421,7 @@ def test_JSONRPCv2_required_jsonrpc():
     assert e.value.code == JSONRPC.INVALID_REQUEST
     assert 'jsonrpc' in e.value.message
     # Respond to ill-formed "notification"
-    assert b'"id": null' in e.value.error_message
+    assert b'"id":null' in e.value.error_message
 
     payload = {"method": "f", "id": 0}
     with pytest.raises(ProtocolError) as e:
@@ -428,7 +430,7 @@ def test_JSONRPCv2_required_jsonrpc():
     assert e.value.code == JSONRPC.INVALID_REQUEST
     assert 'jsonrpc' in e.value.message
     assert b'jsonrpc' in e.value.error_message
-    assert b'"id": 0' in e.value.error_message
+    assert b'"id":0' in e.value.error_message
 
 
 def test_JSONRPCv1_errors():
@@ -499,7 +501,7 @@ def test_batch_not_allowed(protocol):
             protocol.message_to_item(b'[]')
         assert e.value.code == JSONRPC.INVALID_REQUEST
         assert 'dictionary' in e.value.message
-        assert b'"id": null' in e.value.error_message
+        assert b'"id":null' in e.value.error_message
 
         batch = Batch([Request('', [])])
         with pytest.raises(ProtocolError) as e:
@@ -533,8 +535,8 @@ def test_batch_message_from_parts(protocol):
 
 def test_encode_payload(protocol):
     assert protocol.encode_payload(2) == b'2'
-    assert protocol.encode_payload([2, 3]) == b'[2, 3]'
-    assert protocol.encode_payload({"a": 1}) == b'{"a": 1}'
+    assert protocol.encode_payload([2, 3]) == b'[2,3]'
+    assert protocol.encode_payload({"a": 1}) == b'{"a":1}'
     assert protocol.encode_payload(True) == b'true'
     assert protocol.encode_payload(False) == b'false'
     assert protocol.encode_payload(None) == b'null'
@@ -829,7 +831,7 @@ async def test_send_response_round_trip(protocol):
         requests = connection.receive_message(message)
         assert not requests
 
-    async with timeout_after(0.01):
+    async with timeout_after(0.2):
         async with TaskGroup() as group:
             await group.spawn(receive_request)
             await group.spawn(send_request)
@@ -913,7 +915,7 @@ async def test_send_notification_batch(batch_protocol):
         for req, request in zip(batch, requests):
             assert req == request
 
-    async with timeout_after(0.01):
+    async with timeout_after(0.2):
         async with TaskGroup() as group:
             await group.spawn(receive_request)
             await group.spawn(send_request)
@@ -986,7 +988,7 @@ async def test_send_notification(protocol):
         requests = connection.receive_message(message)
         assert requests == [req]
 
-    async with timeout_after(0.01):
+    async with timeout_after(0.2):
         async with TaskGroup() as group:
             await group.spawn(receive_request)
             await group.spawn(send_request)
@@ -1122,17 +1124,22 @@ def test_handler_invocation():
         invocation = handler_invocation(handler, request)
         assert invocation() == result
 
-    bad_requests = (
+    if sys.version_info < (3, 8):
+        powb_request = (Request('powb', {"x": 2, "y": 3}), 'cannot be called')
+    else:
+        powb_request = (Request('powb', {"x": 2, "y": 3}), 'requires parameters')
+
+    bad_requests = [
         (Request('missing_method', []), 'unknown method'),
         (Request('add_many', []), 'requires 1'),
         (Request('add_many', {'first': 1, 'values': []}), 'values'),
-        (Request('powb', {"x": 2, "y": 3}), 'cannot be called'),
+        powb_request,
         (Request('echo_2', ['ping', 'pong']), 'at most 1'),
         (Request('echo_2', {'first': 1, 'second': 8, '3rd': 1}), '3rd'),
         (Request('kwargs', []), 'requires 1'),
         (Request('kwargs', {'end': 4}), "start"),
         (Request('kwargs', {'start': 3, 'end': 1, '3rd': 1}), '3rd'),
-    )
+    ]
 
     for request, text in bad_requests:
         with pytest.raises(RPCError) as e:

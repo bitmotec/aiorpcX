@@ -36,7 +36,7 @@ class MyServerSession(RPCSession):
 
     @classmethod
     async def current_server(self):
-        await sleep(0)
+        await sleep(0.05)
         return self.sessions[0]
 
     async def connection_lost(self):
@@ -79,14 +79,6 @@ def in_caplog(caplog, message):
 
 def caplog_count(caplog, message):
     return sum(message in record.message for record in caplog.records)
-
-
-# This runs all the tests one with plain asyncio, then again with uvloop
-@pytest.fixture(scope="session", autouse=True, params=(False, True))
-def use_uvloop(request):
-    if request.param:
-        import uvloop
-        asyncio.set_event_loop_policy(uvloop.EventLoopPolicy())
 
 
 @pytest.fixture
@@ -198,12 +190,13 @@ class TestRPCSession:
             server_session = await MyServerSession.current_server()
             server_session.error_base_cost = server_session.cost_hard_limit * 1.1
             await session._send_message(b'')
-            await sleep(0.01)
+            await sleep(0.05)
             assert server_session.errors == 1
             assert server_session.cost > server_session.cost_hard_limit
             # Check next request raises and cuts us off
             with pytest.raises(RPCError):
                 await session.send_request('echo', [23])
+            await sleep(0.02)
             assert session.is_closing()
 
     @pytest.mark.asyncio
@@ -215,7 +208,7 @@ class TestRPCSession:
             with pytest.raises(RPCError):
                 await session.send_request('costly_error', [1000])
             # It can trigger a cost recalc which refunds a tad
-            epsilon = 0.1
+            epsilon = 1
             assert server_session.cost > server_session.error_base_cost + 1000 - epsilon
 
     @pytest.mark.asyncio
@@ -329,7 +322,7 @@ class TestRPCSession:
             protocol.pause_writing()
             assert not protocol._can_send.is_set()
             task = await spawn(session._send_message(b'a'))
-            await sleep(session.max_send_delay * 3)
+            await sleep(0.1)
             assert task.cancelled()
             assert protocol._can_send.is_set()
             assert session.is_closing()
@@ -389,9 +382,9 @@ class TestRPCSession:
         async with connect_rs('localhost', server_port) as session:
             session.cost_decay_per_sec = 100
             session.cost = 1000
-            await sleep(0.01)
+            await sleep(0.1)
             session.recalc_concurrency()
-            assert 995 < session.cost < 999.1
+            assert 970 < session.cost < 992
 
     @pytest.mark.asyncio
     async def test_concurrency_hard_limit_0(self, server_port):
@@ -450,7 +443,7 @@ class TestRPCSession:
         async with connect_rs('localhost', server_port) as session:
             value = 42
             assert await session.send_request('disconnect', [value]) == value
-            await sleep(0)
+            await sleep(0.01)
             assert session.is_closing()
 
     @pytest.mark.asyncio
@@ -458,6 +451,7 @@ class TestRPCSession:
         async with connect_rs('localhost', server_port) as session:
             with pytest.raises(RPCError) as e:
                 assert await session.send_request('disconnect')
+            await sleep(0.01)
             exc = e.value
             assert exc.code == 1 and exc.message == 'incompatible version'
             assert session.is_closing()
@@ -574,11 +568,11 @@ class TestRPCSession:
             with caplog.at_level(logging.INFO):
                 assert server.log_me is False
                 await session.send_request('echo', ['ping'])
-                assert caplog_count(caplog, '"method": "echo"') == 0
+                assert caplog_count(caplog, '"method":"echo"') == 0
 
                 server.log_me = True
                 await session.send_request('echo', ['ping'])
-                assert caplog_count(caplog, '"method": "echo"') == 1
+                assert caplog_count(caplog, '"method":"echo"') == 1
 
 
 class WireRPCSession(RPCSession):
@@ -822,6 +816,7 @@ class TestMessageSession(object):
         framer = BitcoinFramer(magic=bytes(4))
         async with connect_message_session('localhost', msg_server_port, framer=framer) as session:
             await session.send_message((b'version', b''))
+        await sleep(0.01)
         assert in_caplog(caplog, 'bad network magic')
 
     @pytest.mark.asyncio
@@ -863,7 +858,7 @@ class TestMessageSession(object):
             server = await MessageServer.current_server()
             server.bump_cost(server.cost_hard_limit + 100)
             await session.send_message((b'version', b'abc'))
-            await sleep(0.005)
+            await sleep(0.05)
             assert session.is_closing()
 
     @pytest.mark.asyncio
